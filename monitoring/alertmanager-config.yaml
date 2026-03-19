@@ -1,0 +1,53 @@
+# AlertmanagerConfig — routes pod restart alerts to Slack
+# Apply with: kubectl apply -f monitoring/alertmanager-config.yaml -n monitoring
+#
+# Prerequisites:
+#   1. Create a Slack incoming webhook at https://api.slack.com/messaging/webhooks
+#   2. Replace YOUR/SLACK/WEBHOOK below with your actual webhook token
+#   3. Create the Kubernetes secret:
+#      kubectl create secret generic slack-webhook-secret \
+#        --from-literal=webhook-url='https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK' \
+#        -n monitoring
+
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: flask-alertmanager-config
+  namespace: monitoring
+  labels:
+    alertmanagerConfig: flask
+spec:
+  route:
+    groupBy: ["alertname"]
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 12h
+    receiver: slack-receiver
+    routes:
+      - matchers:
+          - name: severity
+            value: critical
+        receiver: slack-receiver
+      - matchers:
+          - name: severity
+            value: warning
+        receiver: slack-receiver
+
+  receivers:
+    - name: slack-receiver
+      slackConfigs:
+        - apiURL:
+            name: slack-webhook-secret
+            key: webhook-url
+          channel: "#alerts"
+          sendResolved: true
+          title: |-
+            [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}
+          text: |-
+            {{ range .Alerts }}
+            *Alert:* {{ .Annotations.summary }}
+            *Description:* {{ .Annotations.description }}
+            *Severity:* {{ .Labels.severity }}
+            *Pod:* {{ .Labels.pod }}
+            *Started:* {{ .StartsAt | since }}
+            {{ end }}
